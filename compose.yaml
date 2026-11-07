@@ -3,6 +3,6 @@ services:
     build: .
     user: "${LOCAL_UID:-10001}:${LOCAL_GID:-10001}"
     ports:
-      - "127.0.0.1:5151:5151"
+      - "5151:5151"
     volumes:
       - ./tasks:/app/tasks

@@ -44,7 +44,7 @@ docker compose up --build -d
 
 Run those exports in each new Linux terminal used for Compose, as your regular user (not root). Docker Desktop on Mac/Windows uses the default non-root container user; the exports are not needed there.
 
-Open http://localhost:5151. The app is accessible only from your local machine.
+Open http://localhost:5151 locally, or `http://SERVER_IP:5151/` on a remote server. Docker publishes port 5151 on all host interfaces; remote access also requires inbound TCP 5151 to be allowed by the server/cloud firewall. HTTPS is not configured.
 
 ```bash
 docker compose logs -f   # View logs; Ctrl+C stops following logs
