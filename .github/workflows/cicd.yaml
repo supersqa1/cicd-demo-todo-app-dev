@@ -11,15 +11,27 @@ permissions:
   contents: read
 
 jobs:
-  checks:
-    name: Lint and unit tests (placeholder)
+  lint:
+    name: Lint (placeholder)
     runs-on: ubuntu-latest
     steps:
-      - run: echo "TODO - run lint and unit tests. No checks are implemented yet."
+      - run: echo "TODO - check code style and static issues. No linting runs yet."
+
+  unit_tests:
+    name: Unit tests (placeholder)
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "TODO - test individual functions in isolation. No unit tests run yet."
+
+  integration_tests:
+    name: Integration tests (placeholder)
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "TODO - test Flask routes with isolated file storage. No integration tests run yet."
 
   package:
     name: Build and publish image (placeholder)
-    needs: checks
+    needs: [lint, unit_tests, integration_tests]
     runs-on: ubuntu-latest
     steps:
       - run: echo "TODO - build ARM64/AMD64 image and publish to GHCR."

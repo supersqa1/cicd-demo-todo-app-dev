@@ -95,7 +95,7 @@ docker buildx build --platform linux/amd64 -t cicd-demo-todo-app:amd64 --load .
 
 ## Pipeline skeleton
 
-`.github/workflows/cicd.yaml` runs on pushes to **any branch**, plus manual dispatch once available on the default branch. It only prints the planned stages: checks → image → staging → automation/regression → approval → production → smoke check.
+`.github/workflows/cicd.yaml` runs on pushes to **any branch**, plus manual dispatch once available on the default branch. It only prints the planned stages: lint + unit tests + integration tests (parallel) → image → staging → automation/regression → approval → production → smoke check.
 
 No tests, image publishing, deployments, or real approvals run yet. Green placeholder jobs are not proof that the application passed testing. Before implementing real deployments, restrict releases to `main`, add PR checks, and configure production approval.
 
