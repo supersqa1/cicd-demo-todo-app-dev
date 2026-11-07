@@ -1,6 +1,6 @@
 # CI/CD Demo To-Do App
 
-A small Dockerized Flask app for the SuperSQA CI/CD tutorial series. Create, view, update, and delete tasks while learning how to build a deployment pipeline. This private rehearsal repo contains a placeholder CI/CD workflow and a small regression suite. The public template stays at the starter stage.
+A small Dockerized Flask app for the SuperSQA CI/CD tutorial series. Create, view, update, and delete tasks while learning how to build a deployment pipeline. This private rehearsal repo contains a CI/CD workflow under construction and a small regression suite. The public template stays at the starter stage.
 
 ## Start your own repository
 
@@ -93,11 +93,25 @@ docker buildx build --platform linux/arm64 -t cicd-demo-todo-app:arm64 --load .
 docker buildx build --platform linux/amd64 -t cicd-demo-todo-app:amd64 --load .
 ```
 
-## Pipeline skeleton
+## Pipeline: checks and image publishing
 
-`.github/workflows/cicd.yaml` runs on pushes to **any branch**, plus manual dispatch once available on the default branch. It only prints the planned stages: lint + unit tests + integration tests (parallel) → image → staging → automation/regression → approval → production → smoke check.
+`.github/workflows/cicd.yaml` runs on pushes to any branch during rehearsal. It currently:
 
-No tests, image publishing, deployments, or real approvals run yet. Green placeholder jobs are not proof that the application passed testing. Before implementing real deployments, restrict releases to `main`, add PR checks, and configure production approval.
+- Runs real Ruff linting: syntax/selected correctness errors block the pipeline; style findings are reported without blocking.
+- Runs clearly labeled **simulated** unit/integration jobs (no real tests).
+- Builds AMD64 and ARM64 images and pushes to `ghcr.io/<owner>/<repo>:<full-commit-sha>` after all three initial jobs pass.
+- Authenticates automatically using `GITHUB_TOKEN` with `packages: write`; no custom secrets needed.
+- Outputs the full image tag, digest, and digest-based reference for later deployment. The published image details appear in the job summary.
+
+Staging, browser regression, approval, production, and smoke-check jobs remain placeholders. The local browser tests below are not wired into the workflow yet. Before real deployments, restrict releases to `main`, add PR checks, and configure production approval. New GHCR packages default to private; public pulling requires changing package visibility separately.
+
+To run lint locally:
+
+```bash
+python -m pip install -r requirements-lint.txt
+ruff check app tests --select E9,F63,F7,F82
+ruff check app tests --select E,W,I --ignore E9 --exit-zero
+```
 
 ## Run regression tests locally
 

@@ -1,4 +1,4 @@
-name: CI/CD skeleton (placeholders only)
+name: CI/CD demo
 
 # During the lesson, every branch push shows the workflow immediately.
 # Before real deployments: use PR checks and restrict releases to main.
@@ -12,29 +12,88 @@ permissions:
 
 jobs:
   lint:
-    name: Lint (placeholder)
+    name: Lint
     runs-on: ubuntu-latest
     steps:
-      - run: echo "TODO - check code style and static issues. No linting runs yet."
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install linter
+        run: python -m pip install -r requirements-lint.txt
+      - name: Block correctness errors
+        run: ruff check app tests --select E9,F63,F7,F82 --output-format github
+      - name: Report style findings (non-blocking)
+        run: ruff check app tests --select E,W,I --ignore E9 --exit-zero --output-format concise
 
   unit_tests:
-    name: Unit tests (placeholder)
+    name: Unit tests (simulated)
     runs-on: ubuntu-latest
     steps:
-      - run: echo "TODO - test individual functions in isolation. No unit tests run yet."
+      - run: echo "SIMULATED - no real unit tests run in this lesson yet."
 
   integration_tests:
-    name: Integration tests (placeholder)
+    name: Integration tests (simulated)
     runs-on: ubuntu-latest
     steps:
-      - run: echo "TODO - test Flask routes with isolated file storage. No integration tests run yet."
+      - run: echo "SIMULATED - no real integration tests run in this lesson yet."
 
   package:
-    name: Build and publish image (placeholder)
+    name: Build and publish image
     needs: [lint, unit_tests, integration_tests]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.tag }}
+      digest: ${{ steps.build.outputs.digest }}
+      image_ref: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
     steps:
-      - run: echo "TODO - build ARM64/AMD64 image and publish to GHCR."
+      - uses: actions/checkout@v7.0.1
+      - name: Name the image using the full commit SHA
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          IMAGE="ghcr.io/${REPOSITORY,,}"
+          echo "name=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "tag=$IMAGE:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Enable ARM64 builds on the AMD64 runner
+        uses: docker/setup-qemu-action@v4.4.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4.4.1
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push both architectures
+        id: build
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.image.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Show the published image
+        env:
+          IMAGE: ${{ steps.image.outputs.tag }}
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "## Published image"
+            echo "Tag: \`$IMAGE\`"
+            echo "Deploy this exact artifact: \`$IMAGE_NAME@$DIGEST\`"
+            echo "Platforms: linux/amd64 and linux/arm64"
+            echo "Tests are simulated; deployment jobs remain placeholders."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   staging:
     name: Deploy staging (placeholder)
@@ -69,4 +128,4 @@ jobs:
     needs: production
     runs-on: ubuntu-latest
     steps:
-      - run: echo "TODO - verify production health. Green jobs currently mean only these messages ran."
+      - run: echo "TODO - verify production health. This smoke-check job is still a placeholder."

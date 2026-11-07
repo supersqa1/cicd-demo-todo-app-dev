@@ -38,3 +38,6 @@ tasks/
 # Test reports and browser artifacts
 reports/
 test-results/
+
+# Linter cache
+.ruff_cache/
