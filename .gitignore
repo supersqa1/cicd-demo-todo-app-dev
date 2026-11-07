@@ -34,3 +34,7 @@ Thumbs.db
 !.env.example
 .pytest_cache/
 tasks/
+
+# Test reports and browser artifacts
+reports/
+test-results/

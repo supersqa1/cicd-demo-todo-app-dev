@@ -1,6 +1,6 @@
 # CI/CD Demo To-Do App
 
-A small Dockerized Flask app for the SuperSQA CI/CD tutorial series. Create, view, update, and delete tasks while learning how to build a deployment pipeline. This is the starter application; no CI/CD pipeline is included yet.
+A small Dockerized Flask app for the SuperSQA CI/CD tutorial series. Create, view, update, and delete tasks while learning how to build a deployment pipeline. This private rehearsal repo contains a placeholder CI/CD workflow and a small regression suite. The public template stays at the starter stage.
 
 ## Start your own repository
 
@@ -92,6 +92,36 @@ To explicitly build either platform with a compatible Buildx builder (cross-plat
 docker buildx build --platform linux/arm64 -t cicd-demo-todo-app:arm64 --load .
 docker buildx build --platform linux/amd64 -t cicd-demo-todo-app:amd64 --load .
 ```
+
+## Pipeline skeleton
+
+`.github/workflows/cicd.yaml` runs on pushes to **any branch**, plus manual dispatch once available on the default branch. It only prints the planned stages: checks → image → staging → automation/regression → approval → production → smoke check.
+
+No tests, image publishing, deployments, or real approvals run yet. Green placeholder jobs are not proof that the application passed testing. Before implementing real deployments, restrict releases to `main`, add PR checks, and configure production approval.
+
+## Run regression tests locally
+
+Start the app first. From the repo root, create/activate a virtual environment, then:
+
+```bash
+python -m pip install -r requirements-test.txt
+python -m playwright install chromium
+python -m pytest
+```
+
+Tests run **headlessly** in Chromium. They cover creating a task, both status transitions, and deletion, including persistence after reload. Each test cleans up only its own uniquely named task.
+
+- HTML report: `reports/regression.html` (open in a browser).
+- JUnit XML: `reports/junit.xml` (for future CI integration).
+- Failure screenshots/traces: `reports/playwright/`.
+
+To target another test environment:
+
+```bash
+python -m pytest --base-url http://STAGING_IP:5151
+```
+
+These tests create/delete data; use local or staging environments. They are deliberately **not connected to the skeleton pipeline yet**.
 
 ## Demo scope
 

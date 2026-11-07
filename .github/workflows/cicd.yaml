@@ -1,0 +1,60 @@
+name: CI/CD skeleton (placeholders only)
+
+# During the lesson, every branch push shows the workflow immediately.
+# Before real deployments: use PR checks and restrict releases to main.
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint and unit tests (placeholder)
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "TODO - run lint and unit tests. No checks are implemented yet."
+
+  package:
+    name: Build and publish image (placeholder)
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "TODO - build ARM64/AMD64 image and publish to GHCR."
+
+  staging:
+    name: Deploy staging (placeholder)
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "TODO - deploy the image to staging. No server is contacted."
+
+  automation:
+    name: Automation / Regression (placeholder)
+    needs: staging
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "TODO - run headless Playwright/pytest against staging and save reports."
+
+  approval:
+    name: Release approval (placeholder - no gate)
+    needs: automation
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "TODO - configure a protected production environment. This is NOT an approval gate."
+
+  production:
+    name: Deploy production (placeholder)
+    needs: approval
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "TODO - deploy the SAME image tested in staging. No server is contacted."
+
+  smoke:
+    name: Production smoke check (placeholder)
+    needs: production
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "TODO - verify production health. Green jobs currently mean only these messages ran."
