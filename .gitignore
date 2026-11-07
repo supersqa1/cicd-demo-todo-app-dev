@@ -1,0 +1,36 @@
+# Virtual Environment
+venv/
+venv_todo/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Flask
+instance/
+.webassets-cache
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+# Local development and generated task data
+.venv/
+.env
+.env.*
+!.env.example
+.pytest_cache/
+tasks/
