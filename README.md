@@ -1,6 +1,6 @@
 # CI/CD Demo To-Do App
 
-A small Dockerized Flask app for the SuperSQA CI/CD tutorial series. Create, view, update, and delete tasks while learning how to build a deployment pipeline. This private rehearsal repo contains a CI/CD workflow under construction and a small regression suite. The public template stays at the starter stage.
+A small Dockerized Flask app for the SuperSQA CI/CD tutorial series. Create, view, update, and delete tasks while learning how to build a deployment pipeline. This rehearsal repo contains a CI/CD workflow under construction and a small regression suite. The public template stays at the starter stage.
 
 ## Start your own repository
 
@@ -93,7 +93,7 @@ docker buildx build --platform linux/arm64 -t cicd-demo-todo-app:arm64 --load .
 docker buildx build --platform linux/amd64 -t cicd-demo-todo-app:amd64 --load .
 ```
 
-## Pipeline: checks and image publishing
+## Pipeline: checks, image publishing, and staging
 
 `.github/workflows/cicd.yaml` runs on pushes to any branch during rehearsal. It currently:
 
@@ -103,7 +103,30 @@ docker buildx build --platform linux/amd64 -t cicd-demo-todo-app:amd64 --load .
 - Authenticates automatically using `GITHUB_TOKEN` with `packages: write`; no custom secrets needed.
 - Outputs the full image tag, digest, and digest-based reference for later deployment. The published image details appear in the job summary.
 
-Staging, browser regression, approval, production, and smoke-check jobs remain placeholders. The local browser tests below are not wired into the workflow yet. Before real deployments, restrict releases to `main`, add PR checks, and configure production approval. New GHCR packages default to private; public pulling requires changing package visibility separately.
+The staging job deploys on `main` and the current `feat/pipeline-skeleton-and-regression` rehearsal branch. Other branches only run checks and publishing. Before recording the final workflow, remove the rehearsal branch exception and add PR checks. Staging deployments are serialized to avoid simultaneous container replacements.
+
+Browser regression, approval, production, and production smoke-check jobs remain placeholders. Unit/integration jobs still simulate checks; replacing them with real tests is planned. The local browser tests below are not wired into the workflow yet.
+
+### Staging setup
+
+Use a public GHCR package so the server can pull without registry credentials. New packages default to private; change package visibility separately after the first push.
+
+In **Settings → Environments → staging**, configure:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| Secret | `STAGING_SSH_KEY` | Dedicated deployment private key |
+| Variable | `STAGING_HOST` | Server IP or hostname |
+| Variable | `STAGING_USER` | `root` for this disposable demo |
+| Variable | `STAGING_KNOWN_HOSTS` | Verified OpenSSH known_hosts entry for the server |
+
+Install the matching public key in the server user's `~/.ssh/authorized_keys`. Obtain the server's public host key through a trusted connection or provider console; do not disable host-key checking. For an Ed25519 host key, the known_hosts entry has the form `SERVER_IP ssh-ed25519 PUBLIC_HOST_KEY_BASE64`.
+
+The Ubuntu server needs Docker, Compose, and curl. Deployment uses `/root/projects/<repository-name>` and the repository name as the Compose project name, matching our manual deployment. If your manual deployment used a different directory/project name, adjust the workflow before running it.
+
+The workflow copies `compose.deploy.yaml` and runs `scripts/deploy.sh` over SSH. It pulls the exact image digest from the build job, replaces the existing `app` service, and checks HTTP locally and from the runner. No source clone or image build is needed on the server. `tasks/` remains bind-mounted in the same directory; ownership is set to the image's UID/GID 10001. Container replacement can briefly interrupt service. Failed health checks fail the job; automatic rollback is not implemented.
+
+`compose.yaml` remains the local build configuration. Use `compose.deploy.yaml` for image-based server deployments. Later, production will use a separate environment with its own credentials and a real approval gate.
 
 To run lint locally:
 

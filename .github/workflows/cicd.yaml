@@ -1,7 +1,7 @@
 name: CI/CD demo
 
 # During the lesson, every branch push shows the workflow immediately.
-# Before real deployments: use PR checks and restrict releases to main.
+# Staging deploys only from main or the current rehearsal branch (see job condition).
 on:
   push:
     branches: ["**"]
@@ -92,15 +92,63 @@ jobs:
             echo "Tag: \`$IMAGE\`"
             echo "Deploy this exact artifact: \`$IMAGE_NAME@$DIGEST\`"
             echo "Platforms: linux/amd64 and linux/arm64"
-            echo "Tests are simulated; deployment jobs remain placeholders."
+            echo "Unit/integration tests are simulated; staging deployment follows."
           } >> "$GITHUB_STEP_SUMMARY"
 
   staging:
-    name: Deploy staging (placeholder)
+    name: Deploy staging
     needs: package
+    # Keep quick rehearsal feedback without letting every branch deploy.
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/pipeline-skeleton-and-regression'
     runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 10
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     steps:
-      - run: echo "TODO - deploy the image to staging. No server is contacted."
+      - uses: actions/checkout@v7.0.1
+      - name: Pull and run the published image over SSH
+        env:
+          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          SERVER_HOST: ${{ vars.STAGING_HOST }}
+          SERVER_USER: ${{ vars.STAGING_USER }}
+          KNOWN_HOSTS: ${{ vars.STAGING_KNOWN_HOSTS }}
+          IMAGE_REF: ${{ needs.package.outputs.image_ref }}
+          DEPLOY_DIR: /root/projects/${{ github.event.repository.name }}
+          PROJECT_NAME: ${{ github.event.repository.name }}
+        run: |
+          : "${SSH_KEY:?Missing STAGING_SSH_KEY environment secret}"
+          : "${SERVER_HOST:?Missing STAGING_HOST environment variable}"
+          : "${SERVER_USER:?Missing STAGING_USER environment variable}"
+          : "${KNOWN_HOSTS:?Missing verified STAGING_KNOWN_HOSTS environment variable}"
+          : "${IMAGE_REF:?Missing published image reference}"
+
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
+          unset SSH_KEY
+          ssh_options=(-i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts"
+            -o ConnectTimeout=15)
+          target="$SERVER_USER@$SERVER_HOST"
+
+          printf -v prepare_command 'mkdir -p %q' "$DEPLOY_DIR"
+          ssh "${ssh_options[@]}" "$target" "$prepare_command"
+          scp "${ssh_options[@]}" compose.deploy.yaml "$target:$DEPLOY_DIR/compose.deploy.yaml"
+          printf -v deploy_command 'bash -s -- %q %q %q' "$DEPLOY_DIR" "$IMAGE_REF" "$PROJECT_NAME"
+          ssh "${ssh_options[@]}" "$target" "$deploy_command" < scripts/deploy.sh
+
+          curl --fail --silent --show-error --retry 5 --retry-connrefused \
+            --connect-timeout 10 --max-time 20 "http://$SERVER_HOST:5151/" > /dev/null
+          {
+            echo "## Staging deployed"
+            echo "Image: \`$IMAGE_REF\`"
+            echo "URL: http://$SERVER_HOST:5151/"
+            echo "Task files preserved in \`$DEPLOY_DIR/tasks\`."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   automation:
     name: Automation / Regression (placeholder)

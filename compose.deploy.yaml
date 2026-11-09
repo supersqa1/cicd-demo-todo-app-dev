@@ -1,0 +1,9 @@
+services:
+  app:
+    image: "${IMAGE_REF:?Set IMAGE_REF to the published image digest}"
+    user: "10001:10001"
+    ports:
+      - "5151:5151"
+    volumes:
+      - ./tasks:/app/tasks
+    restart: unless-stopped
