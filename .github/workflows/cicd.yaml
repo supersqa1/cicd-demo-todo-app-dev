@@ -108,7 +108,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7.0.1
-      - name: Pull and run the published image over SSH
+      - name: Deploy the published image
         env:
           SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
           SERVER_HOST: ${{ vars.STAGING_HOST }}
@@ -117,38 +117,17 @@ jobs:
           IMAGE_REF: ${{ needs.package.outputs.image_ref }}
           DEPLOY_DIR: /root/projects/${{ github.event.repository.name }}
           PROJECT_NAME: ${{ github.event.repository.name }}
+        run: bash scripts/deploy-via-ssh.sh
+
+      - name: Verify staging is reachable
+        env:
+          SERVER_HOST: ${{ vars.STAGING_HOST }}
+          IMAGE_REF: ${{ needs.package.outputs.image_ref }}
         run: |
-          : "${SSH_KEY:?Missing STAGING_SSH_KEY environment secret}"
-          : "${SERVER_HOST:?Missing STAGING_HOST environment variable}"
-          : "${SERVER_USER:?Missing STAGING_USER environment variable}"
-          : "${KNOWN_HOSTS:?Missing verified STAGING_KNOWN_HOSTS environment variable}"
-          : "${IMAGE_REF:?Missing published image reference}"
-
-          ssh_dir=$(mktemp -d)
-          trap 'rm -rf "$ssh_dir"' EXIT
-          printf '%s\n' "$SSH_KEY" > "$ssh_dir/key"
-          printf '%s\n' "$KNOWN_HOSTS" > "$ssh_dir/known_hosts"
-          chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
-          unset SSH_KEY
-          ssh_options=(-i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts"
-            -o ConnectTimeout=15)
-          target="$SERVER_USER@$SERVER_HOST"
-
-          printf -v prepare_command 'mkdir -p %q' "$DEPLOY_DIR"
-          ssh "${ssh_options[@]}" "$target" "$prepare_command"
-          scp "${ssh_options[@]}" compose.deploy.yaml "$target:$DEPLOY_DIR/compose.deploy.yaml"
-          printf -v deploy_command 'bash -s -- %q %q %q' "$DEPLOY_DIR" "$IMAGE_REF" "$PROJECT_NAME"
-          ssh "${ssh_options[@]}" "$target" "$deploy_command" < scripts/deploy.sh
-
           curl --fail --silent --show-error --retry 5 --retry-connrefused \
             --connect-timeout 10 --max-time 20 "http://$SERVER_HOST:5151/" > /dev/null
-          {
-            echo "## Staging deployed"
-            echo "Image: \`$IMAGE_REF\`"
-            echo "URL: http://$SERVER_HOST:5151/"
-            echo "Task files preserved in \`$DEPLOY_DIR/tasks\`."
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployed image: $IMAGE_REF" >> "$GITHUB_STEP_SUMMARY"
+          echo "Staging URL: http://$SERVER_HOST:5151/" >> "$GITHUB_STEP_SUMMARY"
 
   automation:
     name: Automation / Regression (placeholder)

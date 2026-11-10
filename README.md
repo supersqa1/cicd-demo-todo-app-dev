@@ -124,7 +124,7 @@ Install the matching public key in the server user's `~/.ssh/authorized_keys`. O
 
 The Ubuntu server needs Docker, Compose, and curl. Deployment uses `/root/projects/<repository-name>` and the repository name as the Compose project name, matching our manual deployment. If your manual deployment used a different directory/project name, adjust the workflow before running it.
 
-The workflow copies `compose.deploy.yaml` and runs `scripts/deploy.sh` over SSH. It pulls the exact image digest from the build job, replaces the existing `app` service, and checks HTTP locally and from the runner. No source clone or image build is needed on the server. `tasks/` remains bind-mounted in the same directory; ownership is set to the image's UID/GID 10001. Container replacement can briefly interrupt service. Failed health checks fail the job; automatic rollback is not implemented.
+The staging job has three visible steps: check out the code, deploy the published image, and verify the public URL. `scripts/deploy-via-ssh.sh` handles SSH setup and copies `compose.deploy.yaml`; it runs `scripts/deploy.sh` on the server. It pulls the exact image digest from the build job, replaces the existing `app` service, and checks HTTP locally and from the runner. No source clone or image build is needed on the server. `tasks/` remains bind-mounted in the same directory; ownership is set to the image's UID/GID 10001. Container replacement can briefly interrupt service. Failed health checks fail the job; automatic rollback is not implemented.
 
 `compose.yaml` remains the local build configuration. Use `compose.deploy.yaml` for image-based server deployments. Later, production will use a separate environment with its own credentials and a real approval gate.
 
