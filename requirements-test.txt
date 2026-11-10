@@ -1,0 +1,5 @@
+-r app/requirements.txt
+pytest==8.4.2
+playwright==1.64.1
+pytest-playwright==0.10.0
+pytest-html==4.2.0

@@ -1,0 +1,238 @@
+name: CI/CD demo
+
+# PRs run checks. Merging into main starts the full release pipeline.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# PR updates replace older checks; main releases finish without interruption.
+concurrency:
+  group: cicd-demo-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install linter
+        run: python -m pip install -r requirements-lint.txt
+      - name: Block correctness errors
+        run: ruff check app tests --select E9,F63,F7,F82 --output-format github
+      - name: Report style findings (non-blocking)
+        run: ruff check app tests --select E,W,I --ignore E9 --exit-zero --output-format concise
+
+  unit_tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Run unit tests
+        run: python -m pytest tests/unit
+      - name: Upload unit reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: unit-reports
+          path: reports/
+          retention-days: 7
+
+  integration_tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Run integration tests
+        run: python -m pytest tests/integration
+      - name: Upload integration reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: integration-reports
+          path: reports/
+          retention-days: 7
+
+  package:
+    name: Build and publish image
+    needs: [lint, unit_tests, integration_tests]
+    # PRs stop after checks; only a main push may publish and deploy.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.tag }}
+      digest: ${{ steps.build.outputs.digest }}
+      image_ref: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Name the image using the full commit SHA
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          IMAGE="ghcr.io/${REPOSITORY,,}"
+          echo "name=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "tag=$IMAGE:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Enable ARM64 builds on the AMD64 runner
+        uses: docker/setup-qemu-action@v4.4.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4.4.1
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push both architectures
+        id: build
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.image.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Show the published image
+        env:
+          IMAGE: ${{ steps.image.outputs.tag }}
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "## Published image"
+            echo "Tag: \`$IMAGE\`"
+            echo "Deploy this exact artifact: \`$IMAGE_NAME@$DIGEST\`"
+            echo "Platforms: linux/amd64 and linux/arm64"
+            echo "Lint, unit tests, and integration tests passed; staging deployment follows."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  staging:
+    name: Deploy staging
+    needs: package
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Deploy the published image
+        env:
+          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          SERVER_HOST: ${{ vars.STAGING_HOST }}
+          SERVER_USER: ${{ vars.STAGING_USER }}
+          KNOWN_HOSTS: ${{ vars.STAGING_KNOWN_HOSTS }}
+          IMAGE_REF: ${{ needs.package.outputs.image_ref }}
+          DEPLOY_DIR: /root/projects/${{ github.event.repository.name }}
+          PROJECT_NAME: ${{ github.event.repository.name }}
+        run: bash scripts/deploy-via-ssh.sh
+
+      - name: Verify staging is reachable
+        env:
+          SERVER_HOST: ${{ vars.STAGING_HOST }}
+          IMAGE_REF: ${{ needs.package.outputs.image_ref }}
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-connrefused \
+            --connect-timeout 10 --max-time 20 "http://$SERVER_HOST:5151/" > /dev/null
+          echo "Deployed image: $IMAGE_REF" >> "$GITHUB_STEP_SUMMARY"
+          echo "Staging URL: http://$SERVER_HOST:5151/" >> "$GITHUB_STEP_SUMMARY"
+
+  automation:
+    name: Automation / Regression
+    needs: staging
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Install headless Chromium and system dependencies
+        run: python -m playwright install --with-deps chromium
+      - name: Run regression against staging
+        env:
+          SERVER_HOST: ${{ vars.STAGING_HOST }}
+        run: |
+          : "${SERVER_HOST:?Missing STAGING_HOST environment variable}"
+          python -m pytest tests/regression --base-url "http://$SERVER_HOST:5151"
+      - name: Upload reports and failure screenshots/traces
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: staging-regression
+          path: reports/
+          retention-days: 7
+
+  production:
+    name: Deploy production (approval required)
+    needs: [package, automation]
+    runs-on: ubuntu-latest
+    # Required reviewers are configured in GitHub Settings → Environments.
+    environment: production
+    timeout-minutes: 10
+    outputs:
+      url: ${{ steps.release.outputs.url }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Deploy the same image tested in staging
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SERVER_HOST: ${{ vars.SERVER_HOST }}
+          SERVER_USER: ${{ vars.SERVER_USER }}
+          KNOWN_HOSTS: ${{ vars.KNOWN_HOSTS }}
+          IMAGE_REF: ${{ needs.package.outputs.image_ref }}
+          DEPLOY_DIR: /root/projects/${{ github.event.repository.name }}
+          PROJECT_NAME: ${{ github.event.repository.name }}
+        run: bash scripts/deploy-via-ssh.sh
+      - name: Show the production release
+        id: release
+        env:
+          SERVER_HOST: ${{ vars.SERVER_HOST }}
+          IMAGE_REF: ${{ needs.package.outputs.image_ref }}
+        run: |
+          echo "url=http://$SERVER_HOST:5151" >> "$GITHUB_OUTPUT"
+          echo "Production image: $IMAGE_REF" >> "$GITHUB_STEP_SUMMARY"
+          echo "Production URL: http://$SERVER_HOST:5151/" >> "$GITHUB_STEP_SUMMARY"
+
+  smoke:
+    name: Production smoke check
+    needs: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    # Uses the public URL output; no credentials or second environment approval.
+    steps:
+      - name: Verify production pages respond
+        env:
+          PRODUCTION_URL: ${{ needs.production.outputs.url }}
+        run: |
+          : "${PRODUCTION_URL:?Missing production URL}"
+          for path in / /view_tasks; do
+            curl --fail --silent --show-error --retry 5 --retry-connrefused \
+              --connect-timeout 10 --max-time 20 "$PRODUCTION_URL$path" > /dev/null
+          done
+          echo "Production smoke check passed: $PRODUCTION_URL" >> "$GITHUB_STEP_SUMMARY"
