@@ -95,7 +95,7 @@ docker buildx build --platform linux/amd64 -t cicd-demo-todo-app:amd64 --load .
 
 ## Pipeline: checks, staging, and production
 
-`.github/workflows/cicd.yaml` runs on pushes to any branch during rehearsal. It currently:
+`.github/workflows/cicd.yaml` runs checks on pull requests targeting `main` (opened, reopened, or updated) and the full release pipeline on pushes to `main`:
 
 - Runs real Ruff linting: syntax/selected correctness errors block the pipeline; style findings are reported without blocking.
 - Runs real unit and integration tests in separate jobs; failures block image publishing. Each job uploads HTML/JUnit reports.
@@ -103,7 +103,11 @@ docker buildx build --platform linux/amd64 -t cicd-demo-todo-app:amd64 --load .
 - Authenticates automatically using `GITHUB_TOKEN` with `packages: write`; no custom secrets needed.
 - Outputs the full image tag, digest, and digest-based reference for later deployment. The published image details appear in the job summary.
 
-The staging job deploys on `main` and the current `feat/pipeline-skeleton-and-regression` rehearsal branch. Other branches only run checks and publishing. Before recording the final workflow, remove the rehearsal branch exception and add PR checks. Workflow runs are serialized so another deployment cannot replace staging while regression tests are running.
+PRs run only lint, unit, and integration tests: no publishing, server credentials, or deployments. A feature-branch push without an open PR does not run the workflow. On a merge (or direct push) to `main`, the checks run again before publishing and deployment. The manual trigger and rehearsal-branch exception have been removed.
+
+Main release runs are serialized so another deployment cannot replace staging while regression tests are running. PRs run independently; newer commits cancel older checks for that same PR.
+
+**Merge blocking is separate:** branch protection/required status checks have not been configured as part of this workflow change. Until configured, failing PR checks report a failure but do not necessarily prevent a merge. To enforce the policy, require PRs and the `Lint`, `Unit tests`, and `Integration tests` checks on `main`. Production still requires its existing environment approval.
 
 After staging succeeds, **Automation / Regression** installs Chromium and runs `tests/regression` headlessly against the staging URL. Failures block the later approval/production jobs. The upload step uses `if: always()` so reports and any failure screenshots/traces are retained even when tests fail. Download the `staging-regression` artifact from the Actions run; report artifacts are kept for 7 days. The browser job uses Ubuntu 24.04 for Playwright system dependency support.
 

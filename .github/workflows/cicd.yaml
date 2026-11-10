@@ -1,19 +1,19 @@
 name: CI/CD demo
 
-# During the lesson, every branch push shows the workflow immediately.
-# Staging deploys only from main or the current rehearsal branch (see job condition).
+# PRs run checks. Merging into main starts the full release pipeline.
 on:
+  pull_request:
+    branches: [main]
   push:
-    branches: ["**"]
-  workflow_dispatch:
+    branches: [main]
 
 permissions:
   contents: read
 
-# One shared staging server: finish deployment AND regression before another run.
+# PR updates replace older checks; main releases finish without interruption.
 concurrency:
-  group: cicd-demo-${{ github.repository }}
-  cancel-in-progress: false
+  group: cicd-demo-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
@@ -74,6 +74,8 @@ jobs:
   package:
     name: Build and publish image
     needs: [lint, unit_tests, integration_tests]
+    # PRs stop after checks; only a main push may publish and deploy.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -131,8 +133,6 @@ jobs:
   staging:
     name: Deploy staging
     needs: package
-    # Keep quick rehearsal feedback without letting every branch deploy.
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/pipeline-skeleton-and-regression'
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 10
