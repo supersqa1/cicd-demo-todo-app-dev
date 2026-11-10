@@ -107,7 +107,8 @@
                                 <option value="completed" class="status-completed" {% if task.status == 'completed' %}selected{% endif %}>Completed</option>
                             </select>
                         </form>
-                        <a href="{{ url_for('delete', filename=task.filename) }}" class="btn btn-danger btn-sm">Delete</a>
+                        <a href="#" class="btn btn-danger btn-sm">Delete</a>
+                        <!-- <a href="{{ url_for('delete', filename=task.filename) }}" class="btn btn-danger btn-sm">Delete</a> -->
                     </div>
                 </li>
             {% endfor %}
