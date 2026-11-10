@@ -18,13 +18,13 @@ compose=(docker compose --project-name "$project_name" -f compose.deploy.yaml)
 
 for attempt in {1..30}; do
   if curl --fail --silent --max-time 3 http://127.0.0.1:5151/ > /dev/null; then
-    echo "Staging responds on port 5151. Image: $IMAGE_REF"
+    echo "Application responds on port 5151. Image: $IMAGE_REF"
     "${compose[@]}" ps
     exit 0
   fi
   sleep 2
 done
 
-echo "Staging failed its HTTP check." >&2
+echo "Application failed its HTTP check." >&2
 "${compose[@]}" logs --tail 50 app
 exit 1

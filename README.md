@@ -93,7 +93,7 @@ docker buildx build --platform linux/arm64 -t cicd-demo-todo-app:arm64 --load .
 docker buildx build --platform linux/amd64 -t cicd-demo-todo-app:amd64 --load .
 ```
 
-## Pipeline: checks, image publishing, and staging
+## Pipeline: checks, staging, and production
 
 `.github/workflows/cicd.yaml` runs on pushes to any branch during rehearsal. It currently:
 
@@ -107,7 +107,7 @@ The staging job deploys on `main` and the current `feat/pipeline-skeleton-and-re
 
 After staging succeeds, **Automation / Regression** installs Chromium and runs `tests/regression` headlessly against the staging URL. Failures block the later approval/production jobs. The upload step uses `if: always()` so reports and any failure screenshots/traces are retained even when tests fail. Download the `staging-regression` artifact from the Actions run; report artifacts are kept for 7 days. The browser job uses Ubuntu 24.04 for Playwright system dependency support.
 
-Approval, production, and production smoke-check jobs remain placeholders. Unit, integration, and regression tests are now real. The public template includes all three suites so recording can focus on connecting them to the pipeline.
+After regression passes, the production job waits for a required reviewer, deploys the same image digest, and passes its public URL to a read-only smoke job. There are no placeholder jobs left. The public template includes all three test suites so recording can focus on connecting them to the pipeline.
 
 ### Staging setup
 
@@ -128,7 +128,26 @@ The Ubuntu server needs Docker, Compose, and curl. Deployment uses `/root/projec
 
 The staging job has three visible steps: check out the code, deploy the published image, and verify the public URL. `scripts/deploy-via-ssh.sh` handles SSH setup and copies `compose.deploy.yaml`; it runs `scripts/deploy.sh` on the server. It pulls the exact image digest from the build job, replaces the existing `app` service, and checks HTTP locally and from the runner. No source clone or image build is needed on the server. `tasks/` remains bind-mounted in the same directory; ownership is set to the image's UID/GID 10001. Container replacement can briefly interrupt service. Failed health checks fail the job; automatic rollback is not implemented.
 
-`compose.yaml` remains the local build configuration. Use `compose.deploy.yaml` for image-based server deployments. Later, production will use a separate environment with its own credentials and a real approval gate.
+`compose.yaml` remains the local build configuration. Use `compose.deploy.yaml` for image-based server deployments. Production uses the same scripts with its own environment settings and server; there is no image rebuild between environments.
+
+### Production and approval
+
+Prepare a second Ubuntu server with Docker and Compose, add the deployment public key, and verify SSH login. In **Settings → Environments → production**, add:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| Secret | `SSH_KEY` | Deployment private key (reused for this demo) |
+| Variable | `SERVER_HOST` | Production IP or hostname |
+| Variable | `SERVER_USER` | `root` for this disposable demo |
+| Variable | `KNOWN_HOSTS` | Verified host-key entry for the production server |
+
+Staging keeps the existing `STAGING_*` names; production uses the names above. Both jobs map their settings to the same script inputs.
+
+Under **Deployment protection rules**, enable **Required reviewers**, select your GitHub user, and save. For a solo recording, leave **Prevent self-review** unchecked so you can approve your own push. Disable administrator bypass to demonstrate a required approval. These settings are separate from the YAML and must be configured in each new tutorial repository.
+
+The production job has `needs: [package, automation]` and `environment: production`. GitHub pauses it before any steps run or production secrets are released. On the run page, select **Review deployments → production → Approve and deploy**. A failed regression job prevents reaching this gate.
+
+The production smoke job then checks `/` and `/view_tasks` over HTTP without changing task data. It uses the public URL output rather than referencing the protected environment again, so it does not require a second approval. A failed smoke check fails the run; automatic rollback is not implemented.
 
 To run lint locally:
 

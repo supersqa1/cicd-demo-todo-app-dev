@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Runs on the GitHub runner. Connection settings come from the staging environment.
+# Runs on the GitHub runner. Connection settings come from the selected deployment environment.
 set -euo pipefail
 
-: "${SSH_KEY:?Missing STAGING_SSH_KEY environment secret}"
-: "${SERVER_HOST:?Missing STAGING_HOST environment variable}"
-: "${SERVER_USER:?Missing STAGING_USER environment variable}"
-: "${KNOWN_HOSTS:?Missing verified STAGING_KNOWN_HOSTS environment variable}"
+: "${SSH_KEY:?Missing SSH_KEY input}"
+: "${SERVER_HOST:?Missing SERVER_HOST input}"
+: "${SERVER_USER:?Missing SERVER_USER input}"
+: "${KNOWN_HOSTS:?Missing verified KNOWN_HOSTS input}"
 : "${IMAGE_REF:?Missing published image reference}"
 
 ssh_dir=$(mktemp -d)

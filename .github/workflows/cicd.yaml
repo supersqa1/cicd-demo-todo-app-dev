@@ -188,23 +188,51 @@ jobs:
           path: reports/
           retention-days: 7
 
-  approval:
-    name: Release approval (placeholder - no gate)
-    needs: automation
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "TODO - configure a protected production environment. This is NOT an approval gate."
-
   production:
-    name: Deploy production (placeholder)
-    needs: approval
+    name: Deploy production (approval required)
+    needs: [package, automation]
     runs-on: ubuntu-latest
+    # Required reviewers are configured in GitHub Settings → Environments.
+    environment: production
+    timeout-minutes: 10
+    outputs:
+      url: ${{ steps.release.outputs.url }}
     steps:
-      - run: echo "TODO - deploy the SAME image tested in staging. No server is contacted."
+      - uses: actions/checkout@v7.0.1
+      - name: Deploy the same image tested in staging
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SERVER_HOST: ${{ vars.SERVER_HOST }}
+          SERVER_USER: ${{ vars.SERVER_USER }}
+          KNOWN_HOSTS: ${{ vars.KNOWN_HOSTS }}
+          IMAGE_REF: ${{ needs.package.outputs.image_ref }}
+          DEPLOY_DIR: /root/projects/${{ github.event.repository.name }}
+          PROJECT_NAME: ${{ github.event.repository.name }}
+        run: bash scripts/deploy-via-ssh.sh
+      - name: Show the production release
+        id: release
+        env:
+          SERVER_HOST: ${{ vars.SERVER_HOST }}
+          IMAGE_REF: ${{ needs.package.outputs.image_ref }}
+        run: |
+          echo "url=http://$SERVER_HOST:5151" >> "$GITHUB_OUTPUT"
+          echo "Production image: $IMAGE_REF" >> "$GITHUB_STEP_SUMMARY"
+          echo "Production URL: http://$SERVER_HOST:5151/" >> "$GITHUB_STEP_SUMMARY"
 
   smoke:
-    name: Production smoke check (placeholder)
+    name: Production smoke check
     needs: production
     runs-on: ubuntu-latest
+    timeout-minutes: 3
+    # Uses the public URL output; no credentials or second environment approval.
     steps:
-      - run: echo "TODO - verify production health. This smoke-check job is still a placeholder."
+      - name: Verify production pages respond
+        env:
+          PRODUCTION_URL: ${{ needs.production.outputs.url }}
+        run: |
+          : "${PRODUCTION_URL:?Missing production URL}"
+          for path in / /view_tasks; do
+            curl --fail --silent --show-error --retry 5 --retry-connrefused \
+              --connect-timeout 10 --max-time 20 "$PRODUCTION_URL$path" > /dev/null
+          done
+          echo "Production smoke check passed: $PRODUCTION_URL" >> "$GITHUB_STEP_SUMMARY"
