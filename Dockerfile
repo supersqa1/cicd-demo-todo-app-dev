@@ -14,4 +14,4 @@ COPY app/ ./app/
 
 USER appuser
 EXPOSE 5151
-CMD ["gunicorn", "--bind", "0.0.0.0:5151", "--workers", "1", "--access-logfile", "-", "--error-logfile", "-", "app.main:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5151", "--workers", "1", "--threads", "4", "--access-logfile", "-", "--error-logfile", "-", "app.main:app"]

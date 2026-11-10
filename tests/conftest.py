@@ -1,13 +1,16 @@
-from uuid import uuid4
-
 import pytest
 
 
 @pytest.fixture
-def task_data(page, base_url):
-    """Give each test unique data; clean up only that test's task."""
-    title = f"regression-{uuid4().hex}"
-    yield {"title": title, "description": "Created by the regression suite"}
-    # HTTP cleanup works even if the browser assertion failed.
-    response = page.request.get(f"{base_url.rstrip('/')}/delete/{title}.txt")
-    assert response.ok, f"Could not clean up test task {title}: {response.status}"
+def task_store(tmp_path, monkeypatch):
+    """Give each backend test its own storage, never the app's real tasks."""
+    from app import main
+
+    monkeypatch.setattr(main, "tasks_folder", str(tmp_path / "tasks"))
+    monkeypatch.setitem(main.app.config, "TESTING", True)
+    return main
+
+
+@pytest.fixture
+def client(task_store):
+    return task_store.app.test_client()

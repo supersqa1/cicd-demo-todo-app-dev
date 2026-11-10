@@ -66,7 +66,7 @@ python -m pip install -r app/requirements.txt
 python -m app.main
 ```
 
-On Windows, use `py -3.12 -m venv .venv` and activate with `.venv\Scripts\Activate.ps1` in PowerShell. Open http://localhost:5151; stop with Ctrl+C. Local task files use the same `tasks/` folder as Docker. Run only one app instance against that folder at a time.
+On Windows, use `py -3.12 -m venv .venv` and activate with `.venv\Scripts\activate.bat` in Command Prompt. Open http://localhost:5151; stop with Ctrl+C. Local task files use the same `tasks/` folder as Docker. Run only one app instance against that folder at a time.
 
 ## ARM64 and AMD64 builds
 
@@ -98,14 +98,16 @@ docker buildx build --platform linux/amd64 -t cicd-demo-todo-app:amd64 --load .
 `.github/workflows/cicd.yaml` runs on pushes to any branch during rehearsal. It currently:
 
 - Runs real Ruff linting: syntax/selected correctness errors block the pipeline; style findings are reported without blocking.
-- Runs clearly labeled **simulated** unit/integration jobs (no real tests).
+- Runs real unit and integration tests in separate jobs; failures block image publishing. Each job uploads HTML/JUnit reports.
 - Builds AMD64 and ARM64 images and pushes to `ghcr.io/<owner>/<repo>:<full-commit-sha>` after all three initial jobs pass.
 - Authenticates automatically using `GITHUB_TOKEN` with `packages: write`; no custom secrets needed.
 - Outputs the full image tag, digest, and digest-based reference for later deployment. The published image details appear in the job summary.
 
-The staging job deploys on `main` and the current `feat/pipeline-skeleton-and-regression` rehearsal branch. Other branches only run checks and publishing. Before recording the final workflow, remove the rehearsal branch exception and add PR checks. Staging deployments are serialized to avoid simultaneous container replacements.
+The staging job deploys on `main` and the current `feat/pipeline-skeleton-and-regression` rehearsal branch. Other branches only run checks and publishing. Before recording the final workflow, remove the rehearsal branch exception and add PR checks. Workflow runs are serialized so another deployment cannot replace staging while regression tests are running.
 
-Browser regression, approval, production, and production smoke-check jobs remain placeholders. Unit/integration jobs still simulate checks; replacing them with real tests is planned. The local browser tests below are not wired into the workflow yet.
+After staging succeeds, **Automation / Regression** installs Chromium and runs `tests/regression` headlessly against the staging URL. Failures block the later approval/production jobs. The upload step uses `if: always()` so reports and any failure screenshots/traces are retained even when tests fail. Download the `staging-regression` artifact from the Actions run; report artifacts are kept for 7 days. The browser job uses Ubuntu 24.04 for Playwright system dependency support.
+
+Approval, production, and production smoke-check jobs remain placeholders. Unit, integration, and regression tests are now real. The public template includes all three suites so recording can focus on connecting them to the pipeline.
 
 ### Staging setup
 
@@ -136,33 +138,41 @@ ruff check app tests --select E9,F63,F7,F82
 ruff check app tests --select E,W,I --ignore E9 --exit-zero
 ```
 
-## Run regression tests locally
+## Tests included
 
-Start the app first. From the repo root, create/activate a virtual environment, then:
+The starter includes **4 unit tests**, **3 integration cases**, and **4 browser regression cases**. Unit tests exercise storage functions; integration tests exercise Flask routes with real temporary files. Backend tests use isolated directories and do not touch your app's tasks.
+
+Create and activate a virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Windows CMD: `py -3.12 -m venv .venv`, then `.venv\Scripts\activate.bat`.
+
+Install the test dependencies (includes Flask) and run backend tests; no running app is needed:
 
 ```bash
 python -m pip install -r requirements-test.txt
-python -m playwright install chromium
-python -m pytest
+python -m pytest tests/unit
+python -m pytest tests/integration
 ```
 
-Tests run **headlessly** in Chromium. They cover creating a task, both status transitions, and deletion, including persistence after reload. Each test cleans up only its own uniquely named task.
-
-- HTML report: `reports/regression.html` (open in a browser).
-- JUnit XML: `reports/junit.xml` (for future CI integration).
-- Failure screenshots/traces: `reports/playwright/`.
-
-To target another test environment:
+`python -m pytest` runs both backend suites by default. To run browser regression, start the app first, then:
 
 ```bash
-python -m pytest --base-url http://STAGING_IP:5151
+python -m playwright install chromium
+python -m pytest tests/regression --base-url http://localhost:5151
 ```
 
-These tests create/delete data; use local or staging environments. They are deliberately **not connected to the skeleton pipeline yet**.
+Tests run headlessly in Chromium. For staging, replace the URL with `http://SERVER_IP:5151`. Browser tests cover create, status updates, and deletion across reloads; each test cleans up only its own uniquely named tasks. Use local/staging, not production.
+
+Reports from the most recent run: `reports/report.html` and `reports/junit.xml`. Failed browser tests also save screenshots and traces under `reports/playwright/`. These generated files are ignored by Git.
 
 ## Demo scope
 
-Docker runs Gunicorn as a non-root user. The direct Python command runs Flask's development server. This starter has no authentication and is not ready for public hosting: task titles become filenames without validation, duplicate titles overwrite tasks, and multiline descriptions are not handled correctly. These limitations will be addressed before public deployment.
+Docker runs Gunicorn as a non-root user with one worker and four threads, so an idle browser connection does not block every request. The direct Python command runs Flask's development server. This starter has no authentication and is not ready for public hosting: task titles become filenames without validation, duplicate titles overwrite tasks, and multiline descriptions are not handled correctly. These limitations will be addressed before public deployment.
 
 ## Source
 

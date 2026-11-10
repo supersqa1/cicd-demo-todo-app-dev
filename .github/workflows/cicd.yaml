@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+# One shared staging server: finish deployment AND regression before another run.
+concurrency:
+  group: cicd-demo-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   lint:
     name: Lint
@@ -27,16 +32,44 @@ jobs:
         run: ruff check app tests --select E,W,I --ignore E9 --exit-zero --output-format concise
 
   unit_tests:
-    name: Unit tests (simulated)
+    name: Unit tests
     runs-on: ubuntu-latest
     steps:
-      - run: echo "SIMULATED - no real unit tests run in this lesson yet."
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Run unit tests
+        run: python -m pytest tests/unit
+      - name: Upload unit reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: unit-reports
+          path: reports/
+          retention-days: 7
 
   integration_tests:
-    name: Integration tests (simulated)
+    name: Integration tests
     runs-on: ubuntu-latest
     steps:
-      - run: echo "SIMULATED - no real integration tests run in this lesson yet."
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Run integration tests
+        run: python -m pytest tests/integration
+      - name: Upload integration reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: integration-reports
+          path: reports/
+          retention-days: 7
 
   package:
     name: Build and publish image
@@ -92,7 +125,7 @@ jobs:
             echo "Tag: \`$IMAGE\`"
             echo "Deploy this exact artifact: \`$IMAGE_NAME@$DIGEST\`"
             echo "Platforms: linux/amd64 and linux/arm64"
-            echo "Unit/integration tests are simulated; staging deployment follows."
+            echo "Lint, unit tests, and integration tests passed; staging deployment follows."
           } >> "$GITHUB_STEP_SUMMARY"
 
   staging:
@@ -103,9 +136,6 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 10
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Deploy the published image
@@ -130,11 +160,33 @@ jobs:
           echo "Staging URL: http://$SERVER_HOST:5151/" >> "$GITHUB_STEP_SUMMARY"
 
   automation:
-    name: Automation / Regression (placeholder)
+    name: Automation / Regression
     needs: staging
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 10
     steps:
-      - run: echo "TODO - run headless Playwright/pytest against staging and save reports."
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Install headless Chromium and system dependencies
+        run: python -m playwright install --with-deps chromium
+      - name: Run regression against staging
+        env:
+          SERVER_HOST: ${{ vars.STAGING_HOST }}
+        run: |
+          : "${SERVER_HOST:?Missing STAGING_HOST environment variable}"
+          python -m pytest tests/regression --base-url "http://$SERVER_HOST:5151"
+      - name: Upload reports and failure screenshots/traces
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: staging-regression
+          path: reports/
+          retention-days: 7
 
   approval:
     name: Release approval (placeholder - no gate)
